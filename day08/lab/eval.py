@@ -20,10 +20,12 @@ A/B Rule (từ slide):
 import json
 import csv
 import os
+import re
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from openai import OpenAI
+import google.generativeai as genai
 from rag_answer import rag_answer
 
 # =============================================================================
@@ -62,30 +64,62 @@ def _call_judge_llm(prompt: str) -> Dict[str, Any]:
     """
     Sử dụng Gemini làm giám khảo (Judge) và trả về kết quả định dạng JSON.
     """
-    # Cấu hình API Key
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    
-    # Lấy tên model từ biến môi trường, mặc định là gemini-1.5-flash
-    model_name = os.getenv("LLM_MODEL", "gemini-1.5-flash")
-    
-    # Khởi tạo model
+    api_key = (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("Thiếu GOOGLE_API_KEY hoặc GEMINI_API_KEY để chạy Gemini judge.")
+
+    model_name = os.getenv("JUDGE_MODEL", os.getenv("LLM_MODEL", "gemini-2.5-flash")).strip()
+    max_retries = int(os.getenv("JUDGE_MAX_RETRIES", "3"))
+    inter_call_delay = float(os.getenv("JUDGE_SLEEP_SECONDS", "0.8"))
+
+    genai.configure(api_key=api_key)
     model = genai.GenerativeModel(
         model_name=model_name,
-        generation_config={
-            "temperature": 0,
-            "response_mime_type": "application/json"  # Ép phản hồi trả về định dạng JSON
-        },
-        system_instruction="You are an objective AI evaluator. Return only JSON."
+        system_instruction=(
+            "You are an objective AI evaluator. "
+            "Return strict JSON only with keys: score (1-5 integer) and notes (string)."
+        ),
     )
 
-    # Gọi API
-    response = model.generate_content(prompt)
-    
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = model.generate_content(
+                prompt,
+                generation_config={"temperature": 0, "response_mime_type": "application/json"},
+            )
+            raw_text = (getattr(response, "text", "") or "").strip()
+            if not raw_text:
+                raise RuntimeError("Gemini judge trả về rỗng.")
+
+            # Fallback parser nếu model bọc JSON trong markdown/codefence.
+            try:
+                data = json.loads(raw_text)
+            except json.JSONDecodeError:
+                match = re.search(r"\{[\s\S]*\}", raw_text)
+                if not match:
+                    raise RuntimeError(f"Không parse được JSON từ judge output: {raw_text[:200]}")
+                data = json.loads(match.group(0))
+
+            if inter_call_delay > 0:
+                time.sleep(inter_call_delay)
+            return data
+        except Exception as e:
+            last_error = e
+            # Backoff nhẹ khi dính rate limit/quota.
+            retry_delay = min(12, 2 * attempt)
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+
+    raise RuntimeError(f"Gemini judge thất bại sau {max_retries} lần thử: {last_error}")
+
+
+def _normalize_score(value: Any) -> Optional[int]:
     try:
-        return json.loads(response.text)
-    except json.JSONDecodeError:
-        # Trường hợp dự phòng nếu model không trả về đúng định dạng JSON
-        return {"error": "Failed to decode JSON", "raw_content": response.text}
+        score = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    return max(1, min(5, score))
 
 def score_faithfulness(
     answer: str,
@@ -146,7 +180,7 @@ def score_faithfulness(
     try:
         result = _call_judge_llm(prompt)
         return {
-            "score": result.get("score"),
+            "score": _normalize_score(result.get("score")),
             "notes": result.get("notes") or result.get("reason", "No reasoning provided"),
         }
     except Exception as e:
@@ -195,7 +229,7 @@ def score_answer_relevance(
     try:
         result = _call_judge_llm(prompt)
         return {
-            "score": result.get("score"),
+            "score": _normalize_score(result.get("score")),
             "notes": result.get("notes") or result.get("reason", "No reasoning provided"),
         }
     except Exception as e:
@@ -309,7 +343,7 @@ def score_completeness(
     try:
         result = _call_judge_llm(prompt)
         return {
-            "score": result.get("score"),
+            "score": _normalize_score(result.get("score")),
             "notes": result.get("notes") or result.get("reason", "No reasoning provided"),
         }
     except Exception as e:
