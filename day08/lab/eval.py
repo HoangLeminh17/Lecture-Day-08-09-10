@@ -114,6 +114,7 @@ def score_faithfulness(
     context = "\n\n".join([c.get("text", "") for c in chunks_used])
     prompt = f"""
     Evaluate the faithfulness of the following answer based ONLY on the provided context.
+    Hãy đánh giá mức độ faithfulness theo thang điểm dưới đây của câu trả lời sau dựa trên context đã cho
     
     Context:
     {context}
@@ -121,14 +122,14 @@ def score_faithfulness(
     Answer:
     {answer}
     
-    Rate the faithfulness on a scale of 1-5:
-    5: The answer is completely grounded in the context. No external information added.
-    4: Mostly grounded, maybe 1 minor detail is not explicitly in the context but likely true.
-    3: Some parts are grounded, but significant information comes from the model's own knowledge.
-    2: Very little of the answer is supported by the context.
-    1: The answer is not grounded or contradicts the context.
+    Thang điểm 1-5:
+      5: Mọi thông tin trong answer đều có trong retrieved chunks
+      4: Gần như hoàn toàn grounded, 1 chi tiết nhỏ chưa chắc chắn
+      3: Phần lớn grounded, một số thông tin có thể từ model knowledge
+      2: Nhiều thông tin không có trong retrieved chunks
+      1: Câu trả lời không grounded, phần lớn là model bịa
 
-    Return the result in JSON format:
+    Trả lại kết quả dưới dạng json:
     {{"score": int, "notes": string}}
     """
     try:
@@ -161,7 +162,7 @@ def score_answer_relevance(
     TODO Sprint 4: Implement tương tự score_faithfulness
     """
     prompt = f"""
-    Evaluate the relevance of the following answer to the user's question.
+    Hãy đánh giá mức độ relevance theo thang điểm dưới đây của câu trả lời sau dựa trên context đã cho
     
     Question:
     {query}
@@ -169,14 +170,15 @@ def score_answer_relevance(
     Answer:
     {answer}
     
-    Rate the relevance on a scale of 1-5:
-    5: The answer directly and fully addresses the question.
-    4: The answer is correct but misses some minor details requested.
-    3: The answer is related but doesn't quite hit the core of the question.
-    2: The answer is partially off-topic.
-    1: The answer does not address the question at all.
+    
+    Thang điểm 1-5:
+      5: Answer trả lời trực tiếp và đầy đủ câu hỏi
+      4: Trả lời đúng nhưng thiếu vài chi tiết phụ
+      3: Trả lời có liên quan nhưng chưa đúng trọng tâm
+      2: Trả lời lạc đề một phần
+      1: Không trả lời câu hỏi
 
-    Return the result in JSON format:
+    Trả lại kết quả dưới dạng json:
     {{"score": int, "notes": string}}
     """
     try:
@@ -273,7 +275,7 @@ def score_completeness(
     """
     prompt = f"""
     Evaluate the completeness of the following answer by comparing it to the expected answer.
-    
+    Đánh giá mức độ hoàn chỉnh của câu trả lời sau dựa trên expected_answer
     Question:
     {query}
     
@@ -283,15 +285,15 @@ def score_completeness(
     Model Answer:
     {answer}
     
-    Rate the completeness on a scale of 1-5:
-    5: The answer covers all key points and details from the expected answer.
-    4: Only a minor detail is missing.
-    3: Some important points are missing.
-    2: Many significant details or key points are missing.
-    1: Most of the core content is missing.
+    Thang điểm 1-5:
+      5: Answer bao gồm đủ tất cả điểm quan trọng trong expected_answer
+      4: Thiếu 1 chi tiết nhỏ
+      3: Thiếu một số thông tin quan trọng
+      2: Thiếu nhiều thông tin quan trọng
+      1: Thiếu phần lớn nội dung cốt lõi
 
-    Return the result in JSON format:
-    {{"score": int, "notes": string}}
+    Trả câu trả lời theo dạng json:
+    {{'score': int, 'missing_points': [str]}}
     """
     try:
         result = _call_judge_llm(prompt)
