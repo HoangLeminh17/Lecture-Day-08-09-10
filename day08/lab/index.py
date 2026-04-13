@@ -311,6 +311,30 @@ def _find_natural_boundary(text: str, start: int, end: int) -> int:
 _sentence_model = None
 
 
+def _gemini_embed_content(genai_module, model_name: str, text: str, task_type: str) -> List[float]:
+    """Embed text bằng Gemini với fallback model tương thích rộng hơn."""
+    try:
+        result = genai_module.embed_content(
+            model=model_name,
+            content=text,
+            task_type=task_type,
+        )
+    except Exception:
+        fallback_model = "models/gemini-embedding-2-preview"
+        if model_name == fallback_model:
+            raise
+        result = genai_module.embed_content(
+            model=fallback_model,
+            content=text,
+            task_type=task_type,
+        )
+
+    embedding = result.get("embedding") if isinstance(result, dict) else None
+    if not embedding:
+        raise RuntimeError("Gemini embedding trả về rỗng.")
+    return embedding
+
+
 def get_embedding(text: str) -> List[float]:
     """
     Tạo embedding vector cho một đoạn text.
@@ -340,12 +364,13 @@ def get_embedding(text: str) -> List[float]:
     elif provider == "gemini":
         import google.generativeai as genai
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=text,
+        model_name = os.getenv("EMBEDDING_MODEL", "models/gemini-embedding-001")
+        return _gemini_embed_content(
+            genai_module=genai,
+            model_name=model_name,
+            text=text,
             task_type="retrieval_document",
         )
-        return result["embedding"]
 
     # ------------------------------------------------------------------ #
     # Option C — Sentence Transformers (local, không cần API key)          #
@@ -545,12 +570,12 @@ if __name__ == "__main__":
     print("\n--- Build Full Index ---")
     print("Lưu ý: Cần implement get_embedding() trước khi chạy bước này!")
     # Uncomment dòng dưới sau khi implement get_embedding():
-    # build_index()
+    build_index()
 
     # Bước 4: Kiểm tra index
     # Uncomment sau khi build_index() thành công:
-    # list_chunks()
-    # inspect_metadata_coverage()
+    list_chunks()
+    inspect_metadata_coverage()
 
     print("\nSprint 1 setup hoàn thành!")
     print("Việc cần làm:")

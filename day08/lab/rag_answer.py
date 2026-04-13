@@ -36,7 +36,7 @@ TOP_K_SEARCH = 10    # Số chunk lấy từ vector store trước rerank (searc
 TOP_K_SELECT = 3     # Số chunk gửi vào prompt sau rerank/select (top-3 sweet spot)
 
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.5-flash")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/gemini-embedding-001")
 
 RRF_K = 60
 
@@ -87,6 +87,30 @@ def _valid_env_value(name: str) -> Optional[str]:
     return value
 
 
+def _gemini_embed_content(genai_module, model_name: str, text: str, task_type: str) -> List[float]:
+    """Embed text với Gemini, fallback về model ổn định nếu model cấu hình không khả dụng."""
+    try:
+        response = genai_module.embed_content(
+            model=model_name,
+            content=text,
+            task_type=task_type,
+        )
+    except Exception:
+        fallback_model = "models/gemini-embedding-2-preview"
+        if model_name == fallback_model:
+            raise
+        response = genai_module.embed_content(
+            model=fallback_model,
+            content=text,
+            task_type=task_type,
+        )
+
+    embedding = response.get("embedding") if isinstance(response, dict) else None
+    if not embedding:
+        raise RuntimeError("Gemini embedding trả về rỗng.")
+    return embedding
+
+
 def _get_collection():
     import chromadb
     from index import CHROMA_DB_DIR
@@ -134,15 +158,12 @@ def _get_query_embedding(text: str) -> List[float]:
         import google.generativeai as genai
 
         genai.configure(api_key=gemini_key)
-        response = genai.embed_content(
-            model=EMBEDDING_MODEL,
-            content=text,
+        return _gemini_embed_content(
+            genai_module=genai,
+            model_name=EMBEDDING_MODEL,
+            text=text,
             task_type="retrieval_query",
         )
-        embedding = response.get("embedding") if isinstance(response, dict) else None
-        if not embedding:
-            raise RuntimeError("Gemini embedding trả về rỗng.")
-        return embedding
 
     raise RuntimeError(
         "EMBEDDING_PROVIDER không hợp lệ. Dùng 'gemini' (khuyến nghị), hoặc 'local' / 'index'."
