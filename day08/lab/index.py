@@ -29,10 +29,10 @@ load_dotenv()
 DOCS_DIR = Path(__file__).parent / "data" / "docs"
 CHROMA_DB_DIR = Path(__file__).parent / "chroma_db"
 
-# TODO Sprint 1: Điều chỉnh chunk size và overlap theo quyết định của nhóm
-# Gợi ý từ slide: chunk 300-500 tokens, overlap 50-80 tokens
-CHUNK_SIZE = 320 # tokens (ước lượng bằng số ký tự / 4)
-CHUNK_OVERLAP = 80     # tokens overlap giữa các chunk
+# CHUNK_SIZE: 300 tokens — phù hợp policy/quy định, vừa đủ 1 điều khoản
+# CHUNK_OVERLAP: 50 tokens — 17% overlap, giữ ngữ cảnh ranh giới giữa chunks
+CHUNK_SIZE = 300       # tokens (ước lượng bằng số ký tự / 4)
+CHUNK_OVERLAP = 50     # tokens overlap giữa các chunk
 
 
 # =============================================================================
