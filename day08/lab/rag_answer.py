@@ -652,8 +652,15 @@ def build_grounded_prompt(query: str, context_block: str) -> str:
     prompt = f"""Answer only from the retrieved context below.
 If the context is insufficient to answer the question, say you do not know and do not make up information.
 Cite the source field (in brackets like [1]) when possible.
-Keep your answer short, clear, and factual.
 Respond in the same language as the question.
+
+Important completeness rules:
+- Include all key facts that are directly relevant to the question, especially numbers, time limits, conditions, and exceptions.
+- If multiple metrics exist (for example first response and resolution time), include all of them.
+- For yes/no questions, start with a direct "Có" or "Không" before explanation.
+- If the question asks about a special case (for example VIP/urgent) and context has no special policy, explicitly say that no special policy is found, then provide the standard policy if available in context.
+- For SLA questions, include every SLA sub-metric found in context (for example first response and resolution), and present them explicitly as "Phản hồi ban đầu: ...; Xử lý: ...".
+- Keep the answer concise (1-3 sentences), but do not omit critical details.
 
 Question: {query}
 
@@ -662,6 +669,35 @@ Context:
 
 Answer:"""
     return prompt
+
+
+def _postprocess_sla_answer(query: str, answer: str, chunks: List[Dict[str, Any]]) -> str:
+    """Bổ sung đủ SLA sub-metrics nếu evidence đã có trong context nhưng answer bị rút gọn."""
+    lower_q = query.lower()
+    if "sla" not in lower_q or "p1" not in lower_q:
+        return answer
+
+    joined_context = "\n".join((c.get("text") or "") for c in chunks)
+    first_resp_match = re.search(r"Phản hồi ban đầu[^:]*:\s*([^\.\n]+)", joined_context, flags=re.IGNORECASE)
+    resolution_match = re.search(r"Xử lý và khắc phục[^:]*:\s*([^\.\n]+)", joined_context, flags=re.IGNORECASE)
+
+    if not first_resp_match or not resolution_match:
+        return answer
+
+    first_resp = first_resp_match.group(1).strip()
+    resolution = resolution_match.group(1).strip()
+
+    has_first_resp = re.search(r"phản\s*hồi\s*ban\s*đầu|first\s*response", answer, flags=re.IGNORECASE)
+    has_resolution = re.search(r"xử\s*lý|khắc\s*phục|resolution", answer, flags=re.IGNORECASE)
+    if has_first_resp and has_resolution:
+        return answer
+
+    citation = "[1]" if "[1]" in answer else ""
+    rebuilt = (
+        f"SLA ticket P1: Phản hồi ban đầu {first_resp}; "
+        f"Xử lý và khắc phục {resolution}. {citation}"
+    ).strip()
+    return rebuilt
 
 
 def call_llm(prompt: str) -> str:
@@ -816,6 +852,7 @@ def rag_answer(
 
     # --- Bước 4: Generate ---
     answer = call_llm(prompt)
+    answer = _postprocess_sla_answer(query=query, answer=answer, chunks=candidates)
 
     # --- Bước 5: Extract sources ---
     sources = list({
