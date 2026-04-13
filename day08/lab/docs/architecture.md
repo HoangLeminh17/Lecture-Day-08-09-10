@@ -18,8 +18,7 @@
 ```
 
 **Mô tả ngắn gọn:**
-> TODO: Mô tả hệ thống trong 2-3 câu. Nhóm xây gì? Cho ai dùng? Giải quyết vấn đề gì?
-
+> Nhóm xây dựng một trợ lý nội bộ dùng RAG để trả lời câu hỏi dựa trên tài liệu chính sách và vận hành của công ty, như SLA xử lý sự cố, hoàn tiền, cấp quyền truy cập, IT Helpdesk và HR. Hệ thống phục vụ nhân sự nội bộ như CS, IT Helpdesk, IT Security và nhân viên công ty khi cần tra cứu nhanh thông tin từ các tài liệu chính thức. Mục tiêu là giảm thời gian tìm kiếm thủ công, trả lời bám sát nguồn có citation, và hạn chế trả lời sai hoặc bịa thông tin khi tài liệu không đủ.
 ---
 
 ## 2. Indexing Pipeline (Sprint 1)
