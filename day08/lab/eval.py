@@ -19,9 +19,11 @@ A/B Rule (từ slide):
 
 import json
 import csv
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from openai import OpenAI
 from rag_answer import rag_answer
 
 # =============================================================================
@@ -55,6 +57,24 @@ VARIANT_CONFIG = {
 # SCORING FUNCTIONS
 # 4 metrics từ slide: Faithfulness, Answer Relevance, Context Recall, Completeness
 # =============================================================================
+
+def _call_judge_llm(prompt: str) -> Dict[str, Any]:
+    """
+    Helper function to call LLM as a judge and return a JSON response.
+    """
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You are an objective AI evaluator. Return only JSON."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0,
+        response_format={"type": "json_object"}
+    )
+    return json.loads(response.choices[0].message.content)
 
 def score_faithfulness(
     answer: str,
@@ -90,11 +110,38 @@ def score_faithfulness(
     """
     # TODO Sprint 4: Implement scoring
     # Tạm thời trả về None (yêu cầu chấm thủ công)
-    return {
-        "score": None,
-        "notes": "TODO: Chấm thủ công hoặc implement LLM-as-Judge",
-    }
+    
+    context = "\n\n".join([c.get("text", "") for c in chunks_used])
+    prompt = f"""
+    Evaluate the faithfulness of the following answer based ONLY on the provided context.
+    
+    Context:
+    {context}
+    
+    Answer:
+    {answer}
+    
+    Rate the faithfulness on a scale of 1-5:
+    5: The answer is completely grounded in the context. No external information added.
+    4: Mostly grounded, maybe 1 minor detail is not explicitly in the context but likely true.
+    3: Some parts are grounded, but significant information comes from the model's own knowledge.
+    2: Very little of the answer is supported by the context.
+    1: The answer is not grounded or contradicts the context.
 
+    Return the result in JSON format:
+    {{"score": int, "notes": string}}
+    """
+    try:
+        result = _call_judge_llm(prompt)
+        return {
+            "score": result.get("score"),
+            "notes": result.get("notes") or result.get("reason", "No reasoning provided"),
+        }
+    except Exception as e:
+        return {
+            "score": None,
+            "notes": f"Error in LLM Judge: {str(e)}",
+        }
 
 def score_answer_relevance(
     query: str,
@@ -113,10 +160,36 @@ def score_answer_relevance(
 
     TODO Sprint 4: Implement tương tự score_faithfulness
     """
-    return {
-        "score": None,
-        "notes": "TODO: Implement score_answer_relevance",
-    }
+    prompt = f"""
+    Evaluate the relevance of the following answer to the user's question.
+    
+    Question:
+    {query}
+    
+    Answer:
+    {answer}
+    
+    Rate the relevance on a scale of 1-5:
+    5: The answer directly and fully addresses the question.
+    4: The answer is correct but misses some minor details requested.
+    3: The answer is related but doesn't quite hit the core of the question.
+    2: The answer is partially off-topic.
+    1: The answer does not address the question at all.
+
+    Return the result in JSON format:
+    {{"score": int, "notes": string}}
+    """
+    try:
+        result = _call_judge_llm(prompt)
+        return {
+            "score": result.get("score"),
+            "notes": result.get("notes") or result.get("reason", "No reasoning provided"),
+        }
+    except Exception as e:
+        return {
+            "score": None,
+            "notes": f"Error in LLM Judge: {str(e)}",
+        }
 
 
 def score_context_recall(
@@ -198,10 +271,39 @@ def score_completeness(
          Rate completeness 1-5. Are all key points covered?
          Output: {'score': int, 'missing_points': [str]}"
     """
-    return {
-        "score": None,
-        "notes": "TODO: Implement score_completeness (so sánh với expected_answer)",
-    }
+    prompt = f"""
+    Evaluate the completeness of the following answer by comparing it to the expected answer.
+    
+    Question:
+    {query}
+    
+    Expected Answer:
+    {expected_answer}
+    
+    Model Answer:
+    {answer}
+    
+    Rate the completeness on a scale of 1-5:
+    5: The answer covers all key points and details from the expected answer.
+    4: Only a minor detail is missing.
+    3: Some important points are missing.
+    2: Many significant details or key points are missing.
+    1: Most of the core content is missing.
+
+    Return the result in JSON format:
+    {{"score": int, "notes": string}}
+    """
+    try:
+        result = _call_judge_llm(prompt)
+        return {
+            "score": result.get("score"),
+            "notes": result.get("notes") or result.get("reason", "No reasoning provided"),
+        }
+    except Exception as e:
+        return {
+            "score": None,
+            "notes": f"Error in LLM Judge: {str(e)}",
+        }
 
 
 # =============================================================================
